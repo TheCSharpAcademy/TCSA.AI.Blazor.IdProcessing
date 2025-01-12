@@ -7,6 +7,8 @@
 @rendermode InteractiveServer
 
 @inject IConfiguration Configuration
+@inject IDocumentIntelligenceService DocumentIntelligenceService
+@inject IDocumentTranslationService DocumentTranslationService
 
 <div class="dropzone @(isDragging ? "dragging" : "")"
 @ondragover="OnDragOver"
@@ -83,52 +85,10 @@
         uploadStatus = "Uploading...";
         foreach (var file in files)
         {
-            await ExtractDataFromId(file);
+            await DocumentTranslationService.TranslateDocument(file);
         }
         uploadStatus = "All files uploaded successfully!";
         files.Clear(); // Clear the list after upload
-    }
-
-    private async Task ExtractDataFromId(IBrowserFile file)
-    {
-        try
-        {
-            string endpoint = Configuration["Values:AzureEndpoint"];
-            string apiKey = Configuration["Values:AzureKey"];
-
-            var client = new DocumentAnalysisClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
-
-            // Upload the file stream
-            await using var nonSeekableStream = file.OpenReadStream(10 * 1024 * 1024); // 10 MB limit
-            using var seekableStream = new MemoryStream();
-            await nonSeekableStream.CopyToAsync(seekableStream);
-            seekableStream.Position = 0; // Reset po
-
-            // Analyze the ID document using the prebuilt model
-            AnalyzeDocumentOperation operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-idDocument", seekableStream);
-            AnalyzeResult result = operation.Value;
-
-            // Extract specific fields
-            var idDocument = result.Documents.FirstOrDefault();
-            if (idDocument != null)
-            {
-                Console.WriteLine("Fields identified in the document:");
-                foreach (var field in idDocument.Fields)
-                {
-                    string fieldName = field.Key; // Field name (e.g., "FullName", "DateOfBirth")
-                    var fieldValue = field.Value?.Content; // Extracted value of the field
-                    Console.WriteLine($"{fieldName}: {fieldValue}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("No ID document data extracted.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
-        }
     }
 
     private async Task UploadToBlobStorage(IBrowserFile file)
