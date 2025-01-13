@@ -3,55 +3,109 @@
 @using Azure.AI.FormRecognizer.DocumentAnalysis
 @using Azure.Storage.Blobs
 @using TCSA.AI.Blazor.IdProcessing.Components.Layout
+@using TCSA.AI.Blazor.IdProcessing.Data
+@using TCSA.AI.Blazor.IdProcessing.Services
 @layout MainLayout
 @rendermode InteractiveServer
 
 @inject IConfiguration Configuration
 @inject IDocumentIntelligenceService DocumentIntelligenceService
 @inject IDocumentTranslationService DocumentTranslationService
+@inject IGuestsService GuestsService
 
-<div class="dropzone @(isDragging ? "dragging" : "")"
-@ondragover="OnDragOver"
-@ondragleave="OnDragLeave"
-@ondrop="OnDrop">
-    Drag and drop files here or click to upload.
-    <InputFile OnChange="HandleFileSelection" multiple />
+<div class="container mt-5">
+
+    <div class="dropzone @(isDragging ? "dragging" : "border border-primary rounded p-4 text-center bg-light")"
+         @ondragover="OnDragOver"
+         @ondragleave="OnDragLeave"
+         @ondrop="OnDrop">
+        <p class="mb-3">Drag and drop files here or click to upload.</p>
+        <InputFile OnChange="HandleFileSelection" multiple class="form-control" />
+    </div>
+
+    @if (files.Count > 0)
+    {
+        <div class="mt-4">
+            <h5>Selected Files:</h5>
+            <ul class="list-group mb-3">
+                @foreach (var file in files)
+                {
+                    <li class="list-group-item">
+                        <strong>@file.Name</strong> (@file.Size / 1024) KB
+                    </li>
+                }
+            </ul>
+            <button class="btn btn-primary" @onclick="UploadFiles">Upload Files</button>
+        </div>
+    }
+
+    <p class="text-success mt-3">@uploadStatus</p>
+
+    <h3 class="mt-5">Guests List</h3>
+    @if (guests == null)
+    {
+        <p class="text-info">Loading guests...</p>
+    }
+    else if (!guests.Any())
+    {
+        <p class="text-warning">No guests found.</p>
+    }
+    else
+    {
+        <table class="table table-striped table-hover mt-4">
+            <thead class="table-dark">
+                <tr>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>DOB</th>
+                    <th>Address</th>
+                    <th>Country</th>
+                    <th>Check-In Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var guest in guests)
+                {
+                    <tr>
+                        <td>@guest.FirstName</td>
+                        <td>@guest.LastName</td>
+                        <td>@guest.DateOfBirth.ToShortDateString()</td>
+                        <td>@guest.Address</td>
+                        <td>@guest.Country</td>
+                        <td>@guest.CheckInDate.ToShortDateString()</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
 </div>
 
-@if (files.Count > 0)
-{
-    <div>
-        <p>Selected Files:</p>
-        <ul>
-            @foreach (var file in files)
-            {
-                <li>@file.Name (@file.Size / 1024) KB</li>
-            }
-        </ul>
-        <button @onclick="UploadFiles">Upload Files</button>
-    </div>
-}
-
-<p>@uploadStatus</p>
 
 <style>
     .dropzone {
-    border: 2px dashed #0078d7;
-    padding: 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
+        border: 2px dashed #0078d7;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
     }
 
-    .dropzone.dragging {
-    background-color: #e6f7ff;
-    }
+        .dropzone.dragging {
+            background-color: #e6f7ff;
+        }
 </style>
 
 @code {
     private bool isDragging = false;
     private string uploadStatus = string.Empty;
     private readonly List<IBrowserFile> files = new();
+    private List<Guest> guests = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        guests = await GuestsService.GetGuestsAsync();
+    }
 
     private void OnDragOver()
     {
@@ -85,8 +139,13 @@
         uploadStatus = "Uploading...";
         foreach (var file in files)
         {
-            await DocumentTranslationService.TranslateDocument(file);
+            var guest = await DocumentIntelligenceService.ExtractDataFromId(file);
+            await GuestsService.AddGuestAsync(guest);
+            //await DocumentTranslationService.TranslateDocument(file);
         }
+
+        guests = await GuestsService.GetGuestsAsync();
+
         uploadStatus = "All files uploaded successfully!";
         files.Clear(); // Clear the list after upload
     }
